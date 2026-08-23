@@ -1,6 +1,6 @@
 {
   "name": "arra-memory-lab",
-  "version": "1.0.0",
+  "version": "26.8.23-alpha.1316",
   "description": "A one-click Cloudflare memory-systems lab with D1, Drizzle, Workers AI, Elysia, React, and MCP",
   "private": true,
   "type": "module",
@@ -10,14 +10,20 @@
     "postbuild": "node scripts/scrub-build-secrets.mjs",
     "test": "bun test src/*.test.ts",
     "typecheck": "tsc --noEmit",
-    "check": "bun test src/*.test.ts && tsc --noEmit && npm run build",
+    "check": "npm run version:check && node --test scripts/calver.test.mjs && bun test src/*.test.ts && tsc --noEmit && npm run build",
     "db:migrate:local": "wrangler d1 migrations apply DB --local",
     "db:migrate:remote": "wrangler d1 migrations apply DB --remote",
     "db:generate": "drizzle-kit generate",
-    "deploy": "npm run db:migrate:remote && npm run build && wrangler deploy",
+    "mcp:connect": "./scripts/connect-mcp.sh",
+    "version:next": "node scripts/calver.mjs",
+    "version:bump": "node scripts/calver.mjs --apply",
+    "version:check": "node scripts/calver.mjs --check",
+    "deploy": "npm run check && node scripts/deploy.mjs",
+    "deploy:dry-run": "npm run build && node scripts/deploy.mjs --dry-run",
     "types": "wrangler types env.d.ts --include-runtime false"
   },
   "dependencies": {
+    "@cloudflare/workers-oauth-provider": "^0.8.1",
     "@modelcontextprotocol/server": "2.0.0",
     "agents": "0.21.0",
     "drizzle-orm": "1.0.0-rc.4",
@@ -42,7 +48,10 @@
   "cloudflare": {
     "bindings": {
       "LAB_ACCESS_TOKEN": {
-        "description": "Generate a long random bearer token, for example with `openssl rand -hex 32`. The browser keeps it only in session storage; MCP clients send it as an Authorization bearer token."
+        "description": "Generate a long random owner secret. The browser API sends it as a bearer token; the MCP OAuth approval page accepts it as the owner passphrase. MCP clients receive separate OAuth tokens."
+      },
+      "OAUTH_KV": {
+        "description": "OAuth clients, grants, authorization codes, and hashed token state for the remote MCP connector."
       },
       "DB": {
         "description": "D1 stores authoritative memories, derived chunks, evidence-backed observations, and bounded metadata-only search traces."

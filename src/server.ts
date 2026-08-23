@@ -1,3 +1,8 @@
+import {
+  OAuthProvider,
+  type AuthRequest,
+  type OAuthHelpers
+} from "@cloudflare/workers-oauth-provider";
 import { McpServer } from "@modelcontextprotocol/server";
 import { createMcpHandler } from "agents/mcp/server";
 import { drizzle } from "drizzle-orm/d1";
@@ -9,7 +14,9 @@ import {
   createObservation,
   ForgetPreviewConflictError,
   forgetMemory,
+  getSearchTrace,
   getLabState,
+  listSearchTraces,
   rebuildIndex,
   searchMemories,
   SemanticScanLimitError,
@@ -26,29 +33,67 @@ import {
   type WorkersAiBinding
 } from "./embedding";
 import { MEMORY_KINDS, SEARCH_MODES } from "./db/schema";
+import { LAB_VERSION } from "./version";
 
 export interface Env {
   DB: D1Database;
   AI?: WorkersAiBinding;
   LAB_ACCESS_TOKEN?: string;
+  OAUTH_KV: KVNamespace;
+  OAUTH_PROVIDER: OAuthHelpers;
   SEMANTIC_MAX_DISTANCE?: string;
 }
 
-const VERSION = "1.0.0";
 const requestEnvironments = new WeakMap<Request, Env>();
 const memoryKindSchema = z.enum(MEMORY_KINDS);
 const searchModeSchema = z.enum(SEARCH_MODES);
+const READ_SCOPE = "memory:read";
+const WRITE_SCOPE = "memory:write";
+const MCP_SCOPES = [READ_SCOPE, WRITE_SCOPE] as const;
+
+function hasSupportedScopes(request: AuthRequest): boolean {
+  return Array.isArray(request.scope) && request.scope.length > 0 && request.scope.every((scope) =>
+    MCP_SCOPES.includes(scope as (typeof MCP_SCOPES)[number])
+  );
+}
+
+function authorizationRequestUrl(origin: string, request: AuthRequest): string {
+  const url = new URL("/authorize", origin);
+  url.searchParams.set("response_type", request.responseType);
+  url.searchParams.set("client_id", request.clientId);
+  url.searchParams.set("redirect_uri", request.redirectUri);
+  url.searchParams.set("scope", request.scope.join(" "));
+  url.searchParams.set("state", request.state);
+  if (request.codeChallenge) url.searchParams.set("code_challenge", request.codeChallenge);
+  if (request.codeChallengeMethod) {
+    url.searchParams.set("code_challenge_method", request.codeChallengeMethod);
+  }
+  for (const resource of Array.isArray(request.resource)
+    ? request.resource
+    : request.resource
+      ? [request.resource]
+      : []) {
+    url.searchParams.append("resource", resource);
+  }
+  return url.href;
+}
 
 const createMemorySchema = z
   .object({
     title: z.string().max(160).optional(),
     content: z.string().min(1).max(12_000),
     kind: memoryKindSchema.optional(),
-    tags: z.array(z.string().max(80)).max(10).optional()
+    tags: z.array(z.string().max(80)).max(10).optional(),
+    project: z.string().max(240).optional(),
+    sourcePath: z.string().max(500).optional(),
+    createdBy: z.string().max(80).optional(),
+    oracleName: z.string().max(80).optional(),
+    supersedesMemoryId: z.string().min(1).max(128).optional()
   })
   .strict();
 
 const updateMemorySchema = createMemorySchema
+  .omit({ supersedesMemoryId: true })
   .partial()
   .refine((value) => Object.keys(value).length > 0, {
     message: "At least one field is required"
@@ -59,6 +104,7 @@ const searchSchema = z
     query: z.string().min(1).max(500),
     mode: searchModeSchema.default("hybrid"),
     kind: memoryKindSchema.optional(),
+    project: z.string().max(240).optional(),
     limit: z.number().int().min(1).max(50).optional()
   })
   .strict();
@@ -152,6 +198,13 @@ export async function isAuthorized(request: Request, env: Env): Promise<boolean>
   const authorization = request.headers.get("authorization") ?? "";
   const match = /^Bearer ([^\s]+)$/.exec(authorization);
   return match ? constantTimeTextEqual(match[1]!, expected) : false;
+}
+
+/** OAuth authorization is accepted only when PKCE is present and pinned to S256. */
+export function hasStrictS256Pkce(request: AuthRequest): boolean {
+  return request.codeChallengeMethod === "S256" &&
+    typeof request.codeChallenge === "string" &&
+    /^[A-Za-z0-9_-]{43}$/.test(request.codeChallenge);
 }
 
 async function requireAccess(request: Request): Promise<Response | null> {
@@ -252,7 +305,8 @@ function parseBody<T>(body: unknown, schema: z.ZodType<T>): T | Response {
 
 const info = {
   name: "Arra Memory Lab",
-  version: VERSION,
+  version: LAB_VERSION,
+  versionScheme: "Bangkok CalVer YY.M.D-alpha.HMM",
   purpose: "A small, inspectable memory-system lab built from five open-source architecture studies.",
   runtime: "Cloudflare Workers",
   http: "Elysia",
@@ -278,27 +332,125 @@ const info = {
       "observe",
       "forget",
       "rebuild_index",
-      "memory_stats"
+      "memory_stats",
+      "trace_list",
+      "trace_get"
     ]
   },
   authority: {
     source: "memories",
+    provenance: "project + sourcePath + createdBy; oracleName is a normalized tag; supersession pins an exact source snapshot",
     derived: ["memory_chunks", "observations", "observation_sources"],
-    operational: "search_traces"
+    operational: ["search_traces", "search_trace_results"]
   },
   guarantees: [
     "vectors are never authoritative",
     "hybrid fallback is explicit",
     "observation evidence retains source revision and hash",
     "forget and rebuild preview before mutation",
-    "search traces never store raw query or memory content"
+    "search traces and ranked result links never store raw query or memory content",
+    "supersession is an immutable snapshot link, not a temporal inference engine"
   ],
   security: {
-    mode: "single bearer token",
+    mode: "OAuth 2.1 + PKCE/DCR for /mcp; static bearer for private /api routes",
     processing: "Create/rebuild sends memory chunks to Workers AI; semantic/hybrid recall sends query text. Keyword recall and previews do not call AI.",
-    warning: "Lab only: no OAuth, tenant isolation, rate limiting, or public-write safety controls."
+    warning: "Lab only: one owner approval secret, no tenant isolation, rate limiting, or public-write safety controls."
   }
 } as const;
+
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>'"]/g, (character) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    "'": "&#39;",
+    '"': "&quot;"
+  })[character]!);
+}
+
+function html(body: string, status = 200): Response {
+  return new Response(body, {
+    status,
+    headers: {
+      "content-type": "text/html; charset=utf-8",
+      "cache-control": "no-store",
+      // Embedded OAuth browsers have blocked even exact-origin form-action lists.
+      // The form target is fixed below and base-uri prevents target rewriting.
+      "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'",
+      "x-content-type-options": "nosniff"
+    }
+  });
+}
+
+export async function handleAuthorization(request: Request, env: Env): Promise<Response> {
+  if (!env.LAB_ACCESS_TOKEN?.trim()) {
+    return json({ error: "lab_not_configured" }, 503);
+  }
+  if (request.method === "GET") {
+    let oauthRequest: AuthRequest;
+    try {
+      oauthRequest = await env.OAUTH_PROVIDER.parseAuthRequest(request);
+    } catch {
+      return html("<h1>Invalid authorization request</h1>", 400);
+    }
+    if (!hasStrictS256Pkce(oauthRequest)) {
+      return html("<h1>S256 PKCE is required</h1>", 400);
+    }
+    if (!hasSupportedScopes(oauthRequest)) {
+      return html("<h1>At least one supported memory scope is required</h1>", 400);
+    }
+    const client = await env.OAUTH_PROVIDER.lookupClient(oauthRequest.clientId);
+    if (!client) return html("<h1>Unknown OAuth client</h1>", 400);
+    const state = btoa(JSON.stringify(oauthRequest));
+    const requestedScopes = oauthRequest.scope.length > 0
+      ? oauthRequest.scope.map((scope) => `<li><code>${escapeHtml(scope)}</code></li>`).join("")
+      : "<li><code>none</code></li>";
+    return html(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Connect Arra Memory Lab</title><style>body{font:16px system-ui;background:#090b12;color:#eef2ff;display:grid;place-items:center;min-height:100vh;margin:0}.card{width:min(34rem,calc(100% - 2rem));background:#151926;border:1px solid #343b52;border-radius:18px;padding:2rem;box-sizing:border-box}h1{margin-top:0}p{color:#b9c1d9;line-height:1.55}code{overflow-wrap:anywhere}label{display:grid;gap:.5rem;margin:1.5rem 0}input,button{font:inherit;padding:.8rem 1rem;border-radius:10px}input{border:1px solid #4a536f;background:#0d1019;color:#fff}button{border:0;background:#8fffd4;color:#07120e;font-weight:700;cursor:pointer}</style></head><body><main class="card"><p>Arra Memory Lab · OAuth</p><h1>Connect ${escapeHtml(client.clientName || "MCP client")}</h1><p>This grants the client access to the requested MCP memory tools. The browser passphrase is exchanged locally with this Worker; the MCP client receives a revocable OAuth token, not the passphrase.</p><p><strong>Redirect URI</strong><br><code>${escapeHtml(oauthRequest.redirectUri)}</code></p><p><strong>Requested scopes</strong></p><ul>${requestedScopes}</ul><form method="post" action="/authorize"><input type="hidden" name="state" value="${escapeHtml(state)}"><label>Lab passphrase<input name="passphrase" type="password" required autocomplete="current-password" autofocus></label><button type="submit">Authorize MCP client</button></form></main></body></html>`);
+  }
+  if (request.method !== "POST") return new Response("Method Not Allowed", { status: 405 });
+
+  const form = await request.formData();
+  const passphrase = form.get("passphrase");
+  if (typeof passphrase !== "string" || !(await constantTimeTextEqual(passphrase, env.LAB_ACCESS_TOKEN))) {
+    return html("<h1>Invalid lab passphrase</h1>", 403);
+  }
+  const state = form.get("state");
+  if (typeof state !== "string") return html("<h1>Missing authorization state</h1>", 400);
+  let oauthRequest: AuthRequest;
+  try {
+    oauthRequest = JSON.parse(atob(state)) as AuthRequest;
+    oauthRequest = await env.OAUTH_PROVIDER.parseAuthRequest(
+      new Request(authorizationRequestUrl(request.url, oauthRequest))
+    );
+  } catch {
+    return html("<h1>Invalid authorization state</h1>", 400);
+  }
+  if (!hasStrictS256Pkce(oauthRequest)) {
+    return html("<h1>S256 PKCE is required</h1>", 400);
+  }
+  if (!hasSupportedScopes(oauthRequest)) {
+    return html("<h1>At least one supported memory scope is required</h1>", 400);
+  }
+  const client = await env.OAUTH_PROVIDER.lookupClient(oauthRequest.clientId);
+  if (!client) return html("<h1>Unknown OAuth client</h1>", 400);
+  let redirectTo: string;
+  try {
+    ({ redirectTo } = await env.OAUTH_PROVIDER.completeAuthorization({
+      request: oauthRequest,
+      userId: "owner",
+      metadata: { label: "Arra Memory Lab", clientName: client.clientName || "MCP client" },
+      scope: oauthRequest.scope,
+      props: { userId: "owner", username: "Arra Memory Lab owner" }
+    }));
+  } catch (error) {
+    console.error("Arra Memory Lab OAuth completion failed", {
+      category: "oauth_provider",
+      errorType: error instanceof Error ? error.name : "unknown"
+    });
+    return html("<h1>Authorization is temporarily unavailable</h1>", 503);
+  }
+  return Response.redirect(redirectTo, 302);
+}
 
 function createApiApp() {
   return new Elysia({ adapter: CloudflareAdapter, aot: false })
@@ -437,8 +589,8 @@ function toolFailure(error: unknown) {
   };
 }
 
-function createLabMcpServer(env: Env) {
-  const server = new McpServer({ name: "Arra Memory Lab", version: VERSION });
+function createLabMcpServer(env: Env, scopes: ReadonlySet<string>) {
+  const server = new McpServer({ name: "Arra Memory Lab", version: LAB_VERSION });
   const db = database(env);
   const provider = embeddingProvider(env);
 
@@ -448,7 +600,7 @@ function createLabMcpServer(env: Env) {
     async () => toolResponse({ ...info })
   );
 
-  server.registerTool(
+  if (scopes.has(WRITE_SCOPE)) server.registerTool(
     "remember",
     {
       description: "Write an authoritative memory, then try to create rebuildable embedding chunks.",
@@ -456,7 +608,12 @@ function createLabMcpServer(env: Env) {
         content: z.string().min(1).max(12_000),
         title: z.string().max(160).optional(),
         kind: memoryKindSchema.optional(),
-        tags: z.array(z.string().max(80)).max(10).optional()
+        tags: z.array(z.string().max(80)).max(10).optional(),
+        project: z.string().max(240).optional(),
+        sourcePath: z.string().max(500).optional(),
+        createdBy: z.string().max(80).optional(),
+        oracleName: z.string().max(80).optional(),
+        supersedesMemoryId: z.string().min(1).max(128).optional()
       }
     },
     async (input) => {
@@ -468,7 +625,7 @@ function createLabMcpServer(env: Env) {
     }
   );
 
-  server.registerTool(
+  if (scopes.has(READ_SCOPE)) server.registerTool(
     "recall",
     {
       description: "Recall memories by keyword, semantic, or hybrid RRF with explicit rank provenance and fallback.",
@@ -476,16 +633,18 @@ function createLabMcpServer(env: Env) {
         query: z.string().min(1).max(500),
         mode: searchModeSchema.optional(),
         kind: memoryKindSchema.optional(),
+        project: z.string().max(240).optional(),
         limit: z.number().int().min(1).max(50).optional()
       }
     },
-    async ({ query, mode, kind, limit }) => {
+    async ({ query, mode, kind, project, limit }) => {
       try {
         return toolResponse(
           await searchMemories(db, provider, {
             query,
             mode: (mode ?? "hybrid") as SearchMode,
             kind: kind as MemoryKind | undefined,
+            project,
             limit,
             semanticMaxDistance: semanticMaxDistance(env)
           })
@@ -496,7 +655,7 @@ function createLabMcpServer(env: Env) {
     }
   );
 
-  server.registerTool(
+  if (scopes.has(WRITE_SCOPE)) server.registerTool(
     "observe",
     {
       description: "Create a derived statement backed by exact source memory IDs, revisions, and hashes.",
@@ -514,7 +673,7 @@ function createLabMcpServer(env: Env) {
     }
   );
 
-  server.registerTool(
+  if (scopes.has(WRITE_SCOPE)) server.registerTool(
     "forget",
     {
       description: "Preview or confirm deletion of one authoritative memory and report affected derived state.",
@@ -531,7 +690,7 @@ function createLabMcpServer(env: Env) {
     }
   );
 
-  server.registerTool(
+  if (scopes.has(WRITE_SCOPE)) server.registerTool(
     "rebuild_index",
     {
       description: "Preview or confirm a bounded rebuild of missing/stale derived embedding chunks.",
@@ -547,9 +706,41 @@ function createLabMcpServer(env: Env) {
     }
   );
 
-  server.registerTool(
+  if (scopes.has(READ_SCOPE)) server.registerTool(
+    "trace_list",
+    {
+      description: "List up to 50 newest metadata-only search traces with ranked result snapshot links.",
+      inputSchema: { limit: z.number().int().min(1).max(50).optional() },
+      annotations: { readOnlyHint: true }
+    },
+    async ({ limit }) => {
+      try {
+        return toolResponse({ traces: await listSearchTraces(db, limit) });
+      } catch (error) {
+        return toolFailure(error);
+      }
+    }
+  );
+
+  if (scopes.has(READ_SCOPE)) server.registerTool(
+    "trace_get",
+    {
+      description: "Read one metadata-only search trace and its ranked result snapshots by trace ID.",
+      inputSchema: { traceId: z.string().min(1).max(128) },
+      annotations: { readOnlyHint: true }
+    },
+    async ({ traceId }) => {
+      try {
+        return toolResponse({ trace: await getSearchTrace(db, traceId) });
+      } catch (error) {
+        return toolFailure(error);
+      }
+    }
+  );
+
+  if (scopes.has(READ_SCOPE)) server.registerTool(
     "memory_stats",
-    { description: "Return corpus, embedding coverage, observation, and trace metadata without vectors." },
+    { description: "Return corpus, embedding coverage, observation, trace, and trace-result counts without vectors." },
     async () => {
       try {
         const state = await getLabState(db);
@@ -565,23 +756,10 @@ function createLabMcpServer(env: Env) {
 
 const apiApp = createApiApp();
 
-export default {
+export const defaultHandler = {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const pathname = new URL(request.url).pathname;
-    if (pathname === "/mcp" || pathname === "/mcp/") {
-      if (!env.LAB_ACCESS_TOKEN?.trim()) {
-        return json({ error: "lab_not_configured" }, 503);
-      }
-      if (!(await isAuthorized(request, env))) {
-        return json(
-          { error: "unauthorized" },
-          401,
-          { "www-authenticate": 'Bearer realm="Arra Memory Lab"' }
-        );
-      }
-      const handler = createMcpHandler(() => createLabMcpServer(env));
-      return handler(request, env, ctx);
-    }
+    if (pathname === "/authorize") return handleAuthorization(request, env);
 
     requestEnvironments.set(request, env);
     try {
@@ -591,3 +769,31 @@ export default {
     }
   }
 };
+
+export const mcpApiHandler = {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    const authorization = request.headers.get("authorization") ?? "";
+    const bearer = /^Bearer ([^\s]+)$/.exec(authorization)?.[1];
+    const token = bearer ? await env.OAUTH_PROVIDER.unwrapToken(bearer) : null;
+    if (!token) {
+      return json(
+        { error: "invalid_token", message: "Send a valid OAuth Bearer token." },
+        401,
+        { "www-authenticate": 'Bearer realm="Arra Memory Lab", error="invalid_token"' }
+      );
+    }
+    const handler = createMcpHandler(() => createLabMcpServer(env, new Set(token.scope)));
+    return handler(request, env, ctx);
+  }
+};
+
+export default new OAuthProvider({
+  authorizeEndpoint: "/authorize",
+  tokenEndpoint: "/oauth/token",
+  clientRegistrationEndpoint: "/oauth/register",
+  scopesSupported: [...MCP_SCOPES],
+  allowPlainPKCE: false,
+  apiRoute: "/mcp",
+  apiHandler: mcpApiHandler,
+  defaultHandler
+});

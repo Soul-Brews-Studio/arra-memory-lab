@@ -59,3 +59,15 @@ Embedding happens after the memory has succeeded as an authoritative write. Prov
 D1 enables automatic Cloudflare provisioning and makes the experiment easy to deploy. It also couples the lab to Cloudflare and does not exercise portable database infrastructure.
 
 **Pattern:** optimize a lab for learning friction, state the tradeoff plainly, and avoid presenting that choice as universal production guidance.
+
+## 8. Provenance fields and discovery tags answer different questions
+
+Repository scope, artifact path, and producer are structured because operators filter, display, and audit them. Oracle identity remains an `oracle-<name>` tag because it is optional discovery metadata, not the authority boundary. `retrospective` and `cheatsheet` are kinds because they describe what the record is.
+
+**Pattern:** persist one canonical scope, type artifacts explicitly, and do not duplicate authority fields into tags.
+
+## 9. Authentication should match the host surface
+
+A static bearer is the smallest operator contract for curl and a single-user browser API. Claude.ai remote connectors expose authless or OAuth flows, so the MCP lane uses OAuth/DCR while the API retains bearer. The owner passphrase approves a connector but is rejected as an MCP token.
+
+**Pattern:** choose the smallest credential protocol every required host can actually configure; keep unrelated surfaces on simpler lanes.

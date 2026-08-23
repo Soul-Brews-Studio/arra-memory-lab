@@ -7,8 +7,10 @@ import {
   createObservation,
   forgetMemory,
   ForgetPreviewConflictError,
+  getSearchTrace,
   getLabState,
   indexMemory,
+  searchMemories,
   updateMemory,
   type LabDatabase
 } from "./domain";
@@ -16,7 +18,9 @@ import { EMBEDDING_DIMENSIONS, EMBEDDING_MODEL, memories, memoryChunks, observat
 import { vectorToBlob, type EmbeddingProvider } from "./embedding";
 import { BunD1Database, interceptNextBatch } from "./test-support/bun-d1";
 
-const migrationSql = readFileSync(new URL("../migrations/0001_init.sql", import.meta.url), "utf8");
+const migrationSql = ["0001_init.sql", "0002_memory_provenance.sql", "0003_trace_links_supersession.sql"]
+  .map((file) => readFileSync(new URL(`../migrations/${file}`, import.meta.url), "utf8"))
+  .join("\n");
 const vector = (axis = 0) => Array.from({ length: EMBEDDING_DIMENSIONS }, (_, index) => index === axis ? 1 : 0);
 const provider: EmbeddingProvider = { model: EMBEDDING_MODEL, embed: async (texts) => texts.map(() => vector()) };
 
@@ -30,6 +34,90 @@ describe("D1-compatible domain contracts", () => {
   });
 
   afterEach(() => binding.close());
+
+  test("stores RRR provenance without duplicating repository identity into tags", async () => {
+    const created = await createMemory(db, null, {
+      title: "RRR lesson",
+      content: "A retrospective about keeping auth boundaries small.",
+      kind: "retrospective",
+      tags: ["oauth"],
+      project: "https://github.com/Soul-Brews-Studio/claude-ai-mcp-poc/",
+      sourcePath: "ψ/memory/retrospectives/2026-08/23/example.md",
+      createdBy: "rrr",
+      oracleName: "neo"
+    });
+    await createMemory(db, null, {
+      content: "A different auth note.",
+      project: "github.com/example/other"
+    });
+
+    expect(created.memory).toEqual(expect.objectContaining({
+      kind: "retrospective",
+      project: "github.com/soul-brews-studio/claude-ai-mcp-poc",
+      sourcePath: "ψ/memory/retrospectives/2026-08/23/example.md",
+      createdBy: "rrr"
+    }));
+    expect(created.memory.tags).toEqual(["oracle-neo", "oauth"]);
+    expect(created.memory.tags).not.toContain("github.com/soul-brews-studio/claude-ai-mcp-poc");
+
+    const search = await searchMemories(db, null, {
+      query: "auth",
+      mode: "keyword",
+      project: "github.com/Soul-Brews-Studio/claude-ai-mcp-poc"
+    });
+    expect(search.results.map((result) => result.memory.id)).toEqual([created.memory.id]);
+  });
+
+  test("pins immutable supersession and preserves trace result evidence after forget", async () => {
+    const source = await createMemory(db, null, { title: "old contract", content: "traceable authority" });
+    const replacement = await createMemory(db, null, {
+      title: "new contract",
+      content: "replaces the old contract",
+      supersedesMemoryId: source.memory.id
+    });
+    expect(replacement.memory).toEqual(expect.objectContaining({
+      supersedesMemoryId: source.memory.id,
+      supersedesRevision: source.memory.revision,
+      supersedesHash: source.memory.contentHash
+    }));
+
+    const search = await searchMemories(db, null, { query: "traceable", mode: "keyword", limit: 1 });
+    expect(search.traceId).toBeString();
+    const traceId = search.traceId;
+    if (!traceId) throw new Error("expected persisted trace ID");
+    const trace = await getSearchTrace(db, traceId);
+    expect(trace.results).toEqual([expect.objectContaining({
+      memoryId: source.memory.id,
+      rank: 1,
+      sourceRevision: source.memory.revision,
+      sourceHash: source.memory.contentHash
+    })]);
+    expect((await getLabState(db)).stats).toEqual(expect.objectContaining({ traces: 1, traceResults: 1 }));
+
+    const preview = await forgetMemory(db, source.memory.id);
+    await forgetMemory(db, source.memory.id, { confirm: true, ...preview });
+    expect((await getSearchTrace(db, traceId)).results[0]?.memoryId).toBe(source.memory.id);
+    expect((await getLabState(db)).memories.find((memory) => memory.id === replacement.memory.id)?.supersedesHash)
+      .toBe(source.memory.contentHash);
+  });
+
+  test("returns no trace ID when fail-safe trace persistence fails", async () => {
+    const source = await createMemory(db, null, { content: "search still succeeds" });
+    const failingTraceBinding = {
+      prepare: (query: string) => binding.prepare(query),
+      batch: async () => { throw new Error("trace transport failed"); },
+      exec: (query: string) => binding.exec(query),
+      withSession: () => binding.withSession(),
+      dump: () => binding.dump()
+    } as D1Database;
+
+    const search = await searchMemories(drizzle(failingTraceBinding), null, {
+      query: "succeeds",
+      mode: "keyword"
+    });
+    expect(search.results[0]?.memory.id).toBe(source.memory.id);
+    expect(search.traceId).toBeNull();
+  });
 
   test("revision update invalidates chunks and surfaces dependent evidence as stale", async () => {
     const created = await createMemory(db, provider, { content: "source revision one" });

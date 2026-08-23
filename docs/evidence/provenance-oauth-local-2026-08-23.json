@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-08-23T04:15:00+07:00",
+  "environment": "local Wrangler Worker and local D1/KV; Workers AI unavailable",
+  "sourceState": "working tree before commit",
+  "containsCredentials": false,
+  "provenance": {
+    "databaseColumnsAdded": ["project", "source_path", "created_by"],
+    "oracleIdentityStorage": "normalized oracle-<name> tag",
+    "memoryKindsBefore": 4,
+    "memoryKindsAfter": 6,
+    "newKinds": ["retrospective", "cheatsheet"],
+    "projectFilter": true,
+    "integrationProof": "RRR provenance row persisted; repository identity absent from tags; exact-project keyword search returned only the matching row"
+  },
+  "authenticationDecision": {
+    "api": "static LAB_ACCESS_TOKEN bearer",
+    "mcp": "OAuth 2.1 authorization code with S256 PKCE and DCR",
+    "ownerPassphraseAcceptedAsMcpBearer": false,
+    "reason": "Claude.ai custom remote connectors expose authless or OAuth connection flows, not a user-entered static Authorization header"
+  },
+  "oauthProof": {
+    "protectedResourceMetadataStatus": 200,
+    "authorizationServerMetadataStatus": 200,
+    "dynamicClientRegistrationStatus": 201,
+    "publicClient": true,
+    "consentPageStatus": 200,
+    "approvalRedirectStatus": 302,
+    "tokenStatus": 200,
+    "tokenType": "bearer",
+    "accessTokenIssued": true,
+    "refreshTokenIssued": true,
+    "pkceMethods": ["S256"],
+    "unauthenticatedMcpStatus": 401,
+    "ownerPassphraseAsMcpBearerStatus": 401
+  },
+  "mcpProof": {
+    "initializeStatus": 200,
+    "protocolVersion": "2025-06-18",
+    "mcpSessionIdPresent": false,
+    "toolsListStatus": 200,
+    "toolCount": 7,
+    "memoryStatsPresent": true
+  },
+  "verification": {
+    "tests": { "passed": 26, "failed": 0, "expectations": 88 },
+    "typecheck": "passed",
+    "productionBuild": "passed",
+    "localMigrationCommands": 10,
+    "localMigrationStatus": "passed",
+    "wranglerDryRun": "passed"
+  },
+  "notProvenHere": [
+    "production deployment",
+    "Claude.ai browser connection",
+    "Workers AI semantic recall after this migration"
+  ]
+}

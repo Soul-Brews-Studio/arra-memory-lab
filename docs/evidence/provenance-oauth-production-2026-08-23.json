@@ -1,0 +1,76 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-08-23T11:00:00+07:00",
+  "environment": "deployed Cloudflare Worker, remote D1, remote OAuth KV, Workers AI, and Claude.ai custom connector",
+  "containsCredentials": false,
+  "deployment": {
+    "workerUrl": "https://arra-memory-lab.laris.workers.dev",
+    "mcpUrl": "https://arra-memory-lab.laris.workers.dev/mcp",
+    "workerVersionId": "3edba2b4-253b-467b-b7aa-04a829ea3aef",
+    "migration": "0002_memory_provenance.sql",
+    "migrationCommands": 10,
+    "migrationStatus": "passed",
+    "authoritativeMemoriesBefore": 4,
+    "authoritativeMemoriesAfter": 4,
+    "foreignKeyCheck": "clean"
+  },
+  "oauthProof": {
+    "protectedResourceMetadataStatus": 200,
+    "authorizationServerMetadataStatus": 200,
+    "dynamicClientRegistrationStatus": 201,
+    "consentPageStatus": 200,
+    "approvalRedirectStatus": 302,
+    "tokenStatus": 200,
+    "accessTokenIssued": true,
+    "refreshTokenIssued": true,
+    "pkceMethods": ["S256"],
+    "claudeAiConnectorStatus": "connected"
+  },
+  "mcpProof": {
+    "initializeStatus": 200,
+    "protocolVersion": "2025-06-18",
+    "mcpSessionIdPresent": false,
+    "toolsListStatus": 200,
+    "toolCount": 7,
+    "claudeAiMemoryStatsCall": "succeeded"
+  },
+  "provenanceProof": {
+    "temporaryKind": "retrospective",
+    "projectNormalized": true,
+    "sourcePathPersisted": true,
+    "createdByPersisted": true,
+    "oracleNameNormalizedToTag": true,
+    "exactProjectFilterMatched": true,
+    "forgetPreviewStatus": 200,
+    "forgetConfirmedStatus": 200,
+    "temporaryRecordAbsentAfterCleanup": true
+  },
+  "semanticProof": {
+    "temporaryKind": "cheatsheet",
+    "indexingSucceeded": true,
+    "chunkCountDuringProof": 1,
+    "requestedMode": "semantic",
+    "effectiveMode": "semantic",
+    "fallbackUsed": false,
+    "resultRank": 1,
+    "cleanupSucceeded": true
+  },
+  "finalState": {
+    "memories": 4,
+    "chunks": 0,
+    "searchTraces": 5
+  },
+  "screenshots": [
+    "screenshots/live-home-v1.1.png",
+    "screenshots/live-authenticated-state-v1.1.png",
+    "screenshots/claude-oauth-consent-v1.1.png",
+    "screenshots/claude-connected-tools-v1.1.png",
+    "screenshots/claude-tool-prompt-v1.1.png",
+    "screenshots/claude-memory-stats-result-v1.1.png"
+  ],
+  "notProvenHere": [
+    "induced provider outage fallback in production",
+    "concurrent production mutation race behavior",
+    "relevance, latency, or capacity benchmarks"
+  ]
+}

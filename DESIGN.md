@@ -8,7 +8,7 @@ The interface should feel like a small scientific instrument: precise, calm, and
 
 1. **Authority is spatial.** The architecture tier row is the first substantive section and visually distinguishes the authoritative memory tier from derived tiers.
 2. **Safety is procedural.** Forget and rebuild always show a preview before exposing confirmation.
-3. **Provenance stays adjacent.** Search modes and ranks sit beside recall results; evidence snapshots sit beneath observations.
+3. **Provenance stays adjacent.** Trace IDs, search modes, and ranks sit beside recall results; evidence and supersession snapshots stay beside their source records.
 4. **Status is not color-only.** Active, stale, retracted, completed, and failed states always include text labels.
 5. **Dense, not cramped.** Monospace operational metadata contrasts with readable prose, with responsive single-column layouts below tablet width.
 
@@ -48,13 +48,15 @@ Color is never the sole carrier of meaning. Borders, labels, arrows, percentages
 ## Interaction contracts
 
 - The bearer token is a password input and is copied only to `sessionStorage`.
+- The same owner secret may approve an OAuth client, but the connector stores only issued OAuth tokens; the approval page never writes the passphrase to client configuration.
 - A live status region reports async success and error messages.
 - Native labels, fieldsets, legends, and controls preserve keyboard and screen-reader behavior.
 - Disabled mutation controls signal missing authorization or active requests.
 - Forget confirmation appears only after a successful `{confirm:false}` response and submits the exact revision/hash/impact fields from that preview; a `stale_preview` response closes the destructive branch until the user previews again.
 - Rebuild confirmation appears only after a successful dry-run response.
+- Remember exposes one optional superseded-memory selector. The stored relationship renders as the pinned ID/revision/hash snapshot, without graph controls.
 - Motion is limited to short hover/focus feedback and respects the browser's normal reduced-motion handling (no ambient or scroll animation is required for comprehension).
 
 ## Information boundary
 
-The public `/api/info` view may disclose architecture, model, and MCP tools. Corpus cards, observations, evidence, coverage, and traces come only from bearer-protected `/api/state`. Search traces deliberately render metadata and never query strings or corpus excerpts.
+The public `/api/info` view may disclose architecture, model, and MCP tools. Corpus cards, observations, evidence, coverage, and traces come only from bearer-protected `/api/state`. Search traces deliberately render IDs, ranks, scores, revisions, and hashes, never query strings or corpus excerpts.

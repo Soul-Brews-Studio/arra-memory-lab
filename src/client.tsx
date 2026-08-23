@@ -2,7 +2,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 
-type MemoryKind = "note" | "decision" | "lesson" | "context";
+type MemoryKind = "note" | "decision" | "lesson" | "context" | "retrospective" | "cheatsheet";
 type SearchMode = "keyword" | "semantic" | "hybrid";
 type Json = Record<string, unknown>;
 
@@ -12,6 +12,12 @@ interface Memory {
   content: string;
   kind: MemoryKind;
   tags: string[];
+  project?: string | null;
+  sourcePath?: string | null;
+  createdBy?: string;
+  supersedesMemoryId?: string | null;
+  supersedesRevision?: number | null;
+  supersedesHash?: string | null;
   revision: number;
   contentHash?: string;
   updatedAt?: string;
@@ -44,9 +50,18 @@ interface Trace {
   status: "completed" | "failed";
   errorCategory?: string | null;
   createdAt?: string;
+  results?: TraceResult[];
 }
 
-const kinds: MemoryKind[] = ["note", "decision", "lesson", "context"];
+interface TraceResult {
+  memoryId: string;
+  rank: number;
+  score: number;
+  sourceRevision: number;
+  sourceHash: string;
+}
+
+const kinds: MemoryKind[] = ["note", "decision", "lesson", "context", "retrospective", "cheatsheet"];
 const modes: SearchMode[] = ["keyword", "semantic", "hybrid"];
 const TOKEN_KEY = "arra-memory-lab-token";
 
@@ -142,7 +157,12 @@ function App() {
     void act("remember", async () => {
       await request("/api/memories", { method: "POST", body: JSON.stringify({
         title: form.get("title"), content: form.get("content"), kind: form.get("kind"),
-        tags: String(form.get("tags") ?? "").split(",").map((tag) => tag.trim()).filter(Boolean)
+        tags: String(form.get("tags") ?? "").split(",").map((tag) => tag.trim()).filter(Boolean),
+        project: form.get("project") || undefined,
+        sourcePath: form.get("sourcePath") || undefined,
+        createdBy: form.get("createdBy") || undefined,
+        oracleName: form.get("oracleName") || undefined,
+        supersedesMemoryId: form.get("supersedesMemoryId") || undefined
       }) });
       formElement.reset();
       setMessage("Authoritative memory saved. Indexing remains best effort.");
@@ -156,7 +176,7 @@ function App() {
     void act("search", async () => {
       const result = await request("/api/search", { method: "POST", body: JSON.stringify({
         query: form.get("query"), mode: form.get("mode"),
-        kind: form.get("kind") || undefined, limit: Number(form.get("limit"))
+        kind: form.get("kind") || undefined, project: form.get("project") || undefined, limit: Number(form.get("limit"))
       }) });
       const resolved = record(result.search ?? result);
       setSearch(resolved);
@@ -263,7 +283,7 @@ function App() {
           <article className="tier"><span>03 · ASSERTION</span><h3>Observations</h3><p>Derived statements pinned to exact source revisions and hashes.</p><strong>{observations.length} claims</strong></article>
           <article className="tier"><span>04 · OPERATIONS</span><h3>Search traces</h3><p>Newest 100 metadata traces. Queries and content are never retained.</p><strong>{traces.length} visible</strong></article>
         </div>
-        <div className="capability-strip"><span>PUBLIC DISCLOSURE</span><code>{String(info.embeddingModel ?? info.embedding_model ?? embeddingInfo.model ?? "@cf/google/embeddinggemma-300m")}</code><span>MCP · {infoTools.length ? infoTools.join(" · ") : "7 tools"}</span></div>
+        <div className="capability-strip"><span>PUBLIC DISCLOSURE</span><code>{String(info.embeddingModel ?? info.embedding_model ?? embeddingInfo.model ?? "@cf/google/embeddinggemma-300m")}</code><span>MCP · {infoTools.length ? infoTools.join(" · ") : "9 tools"}</span></div>
       </section>
 
       <section id="workbench" className="section"><SectionHead number="02" title="Memory workbench" copy="Write to the source of truth, then inspect how recall interprets it."/>
@@ -271,18 +291,21 @@ function App() {
           <form className="panel" onSubmit={createMemory}><PanelTitle title="Remember" note="authoritative write"/>
             <label>Title<input name="title" required maxLength={160} placeholder="What is worth preserving?"/></label>
             <div className="field-row"><label>Kind<select name="kind">{kinds.map((kind) => <option key={kind}>{kind}</option>)}</select></label><label>Tags<input name="tags" placeholder="cloudflare, memory"/></label></div>
+            <div className="field-row"><label>Project / repo<input name="project" placeholder="github.com/owner/repo"/></label><label>Source path<input name="sourcePath" placeholder="ψ/memory/retrospectives/…"/></label></div>
+            <div className="field-row"><label>Created by<select name="createdBy" defaultValue="manual"><option>manual</option><option>rrr</option><option>importer</option></select></label><label>Oracle name<input name="oracleName" placeholder="neo (stored as oracle-neo tag)"/></label></div>
+            <label>Supersedes snapshot<select name="supersedesMemoryId" defaultValue=""><option value="">none</option>{memories.map((memory) => <option key={memory.id} value={memory.id}>{memory.title} · rev {memory.revision}</option>)}</select></label>
             <label>Content<textarea name="content" required maxLength={12000} rows={5} placeholder="State the memory plainly…"/></label>
             <button disabled={!token || !!busy}>Save authoritative memory</button>
           </form>
           <form className="panel" onSubmit={runSearch}><PanelTitle title="Recall" note="inspectable retrieval"/>
             <label>Query<input name="query" required placeholder="What do you need to recall?"/></label>
-            <div className="field-row"><label>Requested mode<select name="mode" defaultValue="hybrid">{modes.map((mode) => <option key={mode}>{mode}</option>)}</select></label><label>Kind<select name="kind" defaultValue=""><option value="">all kinds</option>{kinds.map((kind) => <option key={kind}>{kind}</option>)}</select></label><label>Limit<input name="limit" type="number" min="1" max="50" defaultValue="8"/></label></div>
+            <div className="field-row"><label>Requested mode<select name="mode" defaultValue="hybrid">{modes.map((mode) => <option key={mode}>{mode}</option>)}</select></label><label>Kind<select name="kind" defaultValue=""><option value="">all kinds</option>{kinds.map((kind) => <option key={kind}>{kind}</option>)}</select></label><label>Project<input name="project" placeholder="all projects"/></label><label>Limit<input name="limit" type="number" min="1" max="50" defaultValue="8"/></label></div>
             <p className="hint">Hybrid may degrade only when the embedding provider fails. Semantic never silently falls back.</p>
             <button disabled={!token || !!busy}>Run recall</button>
           </form>
         </div>
         {search && <div className="search-output">
-          <div className="mode-line"><Metric label="requested" value={String(searchMeta.requestedMode ?? searchMeta.requested_mode ?? "—")}/><span>→</span><Metric label="effective" value={String(searchMeta.effectiveMode ?? searchMeta.effective_mode ?? "—")}/><Metric label="degradation" value={String(searchMeta.fallbackReason ?? searchMeta.fallback_reason ?? record(searchMeta.fallback).reason ?? "none")}/></div>
+          <div className="mode-line"><Metric label="trace" value={String(searchMeta.traceId ?? searchMeta.trace_id ?? "—")}/><Metric label="requested" value={String(searchMeta.requestedMode ?? searchMeta.requested_mode ?? "—")}/><span>→</span><Metric label="effective" value={String(searchMeta.effectiveMode ?? searchMeta.effective_mode ?? "—")}/><Metric label="degradation" value={String(searchMeta.fallbackReason ?? searchMeta.fallback_reason ?? record(searchMeta.fallback).reason ?? "none")}/></div>
           <div className="result-list">{results.length ? results.map((result, index) => { const memory = record(result.memory ?? result); const provenance = record(result.rankProvenance ?? result.rank_provenance ?? result.provenance); const distance = provenance.semanticDistance ?? provenance.semantic_distance; return <article key={String(memory.id ?? index)}><span className="rank">#{index + 1}</span><div><strong>{String(memory.title ?? "Untitled memory")}</strong><p>{String(memory.content ?? memory.snippet ?? "")}</p><small>rank provenance · keyword {String(provenance.keywordRank ?? provenance.keyword_rank ?? "—")} · semantic {String(provenance.semanticRank ?? provenance.semantic_rank ?? "—")} · distance {typeof distance === "number" ? distance.toFixed(4) : "—"}</small></div></article>; }) : <p className="empty">No memories matched this recall.</p>}</div>
         </div>}
       </section>
@@ -290,7 +313,7 @@ function App() {
       <section className="section"><SectionHead number="03" title="Corpus & safe mutations" copy="Revision is visible. Forgetting and rebuilding always begin with a dry run."/>
         <div className="memory-list">{memories.length ? memories.map((memory) => <article className="memory-card" key={memory.id}>
           <div><span className="kind">{memory.kind}</span><span className="revision">rev {memory.revision}</span></div><h3>{memory.title}</h3><p>{memory.content}</p>
-          <div className="tags">{array<string>(memory.tags).map((tag) => <span key={tag}>{tag}</span>)}</div><small>updated {displayDate(memory.updatedAt)} · hash {shortHash(memory.contentHash)}</small>
+          <div className="tags">{array<string>(memory.tags).map((tag) => <span key={tag}>{tag}</span>)}</div><small>{memory.project ? `${memory.project} · ` : ""}{memory.sourcePath ? `${memory.sourcePath} · ` : ""}{memory.createdBy ? `${memory.createdBy} · ` : ""}updated {displayDate(memory.updatedAt)} · hash {shortHash(memory.contentHash)}{memory.supersedesMemoryId ? ` · supersedes ${memory.supersedesMemoryId} @ rev ${memory.supersedesRevision} / ${shortHash(memory.supersedesHash ?? undefined)}` : ""}</small>
           <div className="actions"><button className="quiet" onClick={() => updateMemory(memory)}>Edit + revise</button><button className="danger" onClick={() => previewForget(memory)}>Preview forget</button></div>
         </article>) : <p className="empty">No authoritative memories yet.</p>}</div>
         <div className="safety-grid"><div className="panel"><PanelTitle title="Index coverage" note="derived and rebuildable"/><div className="coverage"><span style={{width: `${Math.min(100, coverage * (coverage <= 1 ? 100 : 1))}%`}}/><b>{Math.round(coverage * (coverage <= 1 ? 100 : 1))}%</b></div><p className="hint">Confirmed rebuilds are bounded to 10 memories and 256 chunks, with revision/hash rechecks.</p><button className="quiet" onClick={() => rebuild(false)}>Preview rebuild</button>{rebuildPreview && <><pre>{JSON.stringify(rebuildPreview, null, 2)}</pre><button onClick={() => rebuild(true)}>Confirm bounded rebuild</button></>}</div>
@@ -304,10 +327,10 @@ function App() {
       </section>
 
       <section className="section"><SectionHead number="05" title="Bounded operational traces" copy="Enough metadata to diagnose retrieval. Never enough to reconstruct what someone searched."/>
-        <div className="trace-table" role="region" aria-label="Search traces" tabIndex={0}><table><thead><tr><th>Time / query hash</th><th>Route</th><th>Candidate sets</th><th>Result</th><th>Latency</th><th>Status</th></tr></thead><tbody>{traces.map((trace) => <tr key={trace.id}><td>{displayDate(trace.createdAt)}<small>{shortHash(trace.queryHash)}</small></td><td>{trace.requestedMode} → {trace.effectiveMode}{trace.fallbackReason && <small>{trace.fallbackReason}</small>}</td><td>keyword {trace.keywordCount}<small>semantic {trace.semanticCount}</small></td><td>{trace.resultCount ?? "—"}</td><td>{trace.durationMs}ms</td><td><span className={`badge ${trace.status}`}>{trace.errorCategory ?? trace.status}</span></td></tr>)}</tbody></table>{!traces.length && <p className="empty">Search activity will appear here as metadata only.</p>}</div>
+        <div className="trace-table" role="region" aria-label="Search traces" tabIndex={0}><table><thead><tr><th>Time / trace / query hash</th><th>Route</th><th>Candidate sets</th><th>Ranked snapshots</th><th>Latency</th><th>Status</th></tr></thead><tbody>{traces.map((trace) => <tr key={trace.id}><td>{displayDate(trace.createdAt)}<small>{trace.id}</small><small>{shortHash(trace.queryHash)}</small></td><td>{trace.requestedMode} → {trace.effectiveMode}{trace.fallbackReason && <small>{trace.fallbackReason}</small>}</td><td>keyword {trace.keywordCount}<small>semantic {trace.semanticCount}</small></td><td>{trace.resultCount ?? "—"}{array<TraceResult>(trace.results).map((result) => <small key={`${trace.id}-${result.rank}`}>#{result.rank} · {result.score.toFixed(6)} · {result.memoryId} @ rev {result.sourceRevision} / {shortHash(result.sourceHash)}</small>)}</td><td>{trace.durationMs}ms</td><td><span className={`badge ${trace.status}`}>{trace.errorCategory ?? trace.status}</span></td></tr>)}</tbody></table>{!traces.length && <p className="empty">Search activity will appear here as metadata only.</p>}</div>
       </section>
     </main>
-    <footer><span>ARRA MEMORY LAB · V1</span><p>Explicit authority. Visible degradation. Reversible derived state.</p><button className="quiet" onClick={refresh}>Refresh state</button></footer>
+    <footer><span>ARRA MEMORY LAB · {__LAB_VERSION__}</span><p>Explicit authority. Visible degradation. Reversible derived state.</p><button className="quiet" onClick={refresh}>Refresh state</button></footer>
   </div>;
 }
 

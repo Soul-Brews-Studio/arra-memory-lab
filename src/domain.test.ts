@@ -6,7 +6,8 @@ import { EMBEDDING_DIMENSIONS, EMBEDDING_MODEL, memoryChunks, searchTraces, type
 
 function memory(id: string): MemoryRow {
   return {
-    id, title: id, content: id, kind: "note", tags: [], revision: 1,
+    id, title: id, content: id, kind: "note", tags: [], project: null, sourcePath: null, createdBy: "manual",
+    supersedesMemoryId: null, supersedesRevision: null, supersedesHash: null, revision: 1,
     contentHash: id.padEnd(64, "0"), createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z"
   };
 }
@@ -64,7 +65,7 @@ test("forget conflicts expose only the stable stale-preview code", () => {
   expect(error.name).toBe("ForgetPreviewConflictError");
 });
 
-test("trace pruning keeps the newest bounded window with executable SQLite", () => {
+test("trace pruning keeps the newest bounded window and cascades result links", () => {
   const queryDb = drizzle({} as D1Database);
   const compiled = tracePruneQuery(queryDb).toSQL();
   expect(compiled.sql).toContain("limit ? offset ?");
@@ -72,14 +73,20 @@ test("trace pruning keeps the newest bounded window with executable SQLite", () 
 
   const sqlite = new Database(":memory:");
   try {
+    sqlite.run("PRAGMA foreign_keys = ON");
     sqlite.run("CREATE TABLE search_traces (id TEXT PRIMARY KEY, created_at TEXT NOT NULL)");
+    sqlite.run("CREATE TABLE search_trace_results (trace_id TEXT NOT NULL REFERENCES search_traces(id) ON DELETE CASCADE, rank INTEGER NOT NULL, PRIMARY KEY(trace_id, rank))");
     const insert = sqlite.prepare("INSERT INTO search_traces (id, created_at) VALUES (?, ?)");
+    const insertResult = sqlite.prepare("INSERT INTO search_trace_results (trace_id, rank) VALUES (?, 1)");
     for (let index = 0; index < TRACE_RETENTION + 20; index += 1) {
-      insert.run(index.toString().padStart(3, "0"), new Date(index * 1_000).toISOString());
+      const traceId = index.toString().padStart(3, "0");
+      insert.run(traceId, new Date(index * 1_000).toISOString());
+      insertResult.run(traceId);
     }
     sqlite.query(compiled.sql).run(...(compiled.params as number[]));
     const [{ count }] = sqlite.query<{ count: number }, []>("SELECT COUNT(*) AS count FROM search_traces").all();
     expect(count).toBe(TRACE_RETENTION);
+    expect(sqlite.query<{ count: number }, []>("SELECT COUNT(*) AS count FROM search_trace_results").get()?.count).toBe(TRACE_RETENTION);
     expect(sqlite.query<{ id: string }, []>("SELECT id FROM search_traces ORDER BY created_at ASC LIMIT 1").get()?.id).toBe("020");
   } finally {
     sqlite.close();

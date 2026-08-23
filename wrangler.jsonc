@@ -6,7 +6,7 @@
   "main": "src/server.ts",
   "assets": {
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/api/*", "/mcp"]
+    "run_worker_first": ["/api/*", "/mcp", "/authorize", "/oauth/*", "/.well-known/*"]
   },
   "ai": {
     "binding": "AI"
@@ -17,6 +17,12 @@
       "database_name": "arra-memory-lab",
       "database_id": "00000000-0000-0000-0000-000000000000",
       "migrations_dir": "migrations"
+    }
+  ],
+  "kv_namespaces": [
+    {
+      "binding": "OAUTH_KV",
+      "id": "00000000000000000000000000000000"
     }
   ],
   "vars": {

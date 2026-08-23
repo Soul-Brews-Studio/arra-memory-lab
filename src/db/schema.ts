@@ -5,6 +5,7 @@ import {
   index,
   integer,
   primaryKey,
+  real,
   sqliteTable,
   text,
   uniqueIndex
@@ -13,7 +14,7 @@ import {
 export const EMBEDDING_DIMENSIONS = 768;
 export const EMBEDDING_MODEL = "@cf/google/embeddinggemma-300m";
 export const EMBEDDING_VERSION = 1;
-export const MEMORY_KINDS = ["note", "decision", "lesson", "context"] as const;
+export const MEMORY_KINDS = ["note", "decision", "lesson", "context", "retrospective", "cheatsheet"] as const;
 export const OBSERVATION_STATUSES = ["active", "stale", "retracted"] as const;
 export const SEARCH_MODES = ["keyword", "semantic", "hybrid"] as const;
 
@@ -39,6 +40,12 @@ export const memories = sqliteTable("memories", {
   content: text("content").notNull(),
   kind: text("kind", { enum: MEMORY_KINDS }).notNull().default("note"),
   tags: text("tags", { mode: "json" }).$type<string[]>().notNull().default(sql`'[]'`),
+  project: text("project"),
+  sourcePath: text("source_path"),
+  createdBy: text("created_by").notNull().default("manual"),
+  supersedesMemoryId: text("supersedes_memory_id"),
+  supersedesRevision: integer("supersedes_revision"),
+  supersedesHash: text("supersedes_hash"),
   revision: integer("revision").notNull().default(1),
   contentHash: text("content_hash").notNull(),
   createdAt: text("created_at").notNull(),
@@ -46,7 +53,9 @@ export const memories = sqliteTable("memories", {
 }, (table) => [
   index("memories_updated_idx").on(table.updatedAt),
   index("memories_kind_idx").on(table.kind, table.updatedAt),
+  index("memories_project_idx").on(table.project, table.updatedAt),
   check("memories_revision_check", sql`${table.revision} >= 1`),
+  check("memories_supersedes_revision_check", sql`${table.supersedesRevision} IS NULL OR ${table.supersedesRevision} >= 1`),
   check("memories_title_check", sql`length(${table.title}) BETWEEN 1 AND 160`),
   check("memories_content_check", sql`length(${table.content}) BETWEEN 1 AND 12000`)
 ]);
@@ -116,9 +125,28 @@ export const searchTraces = sqliteTable("search_traces", {
   check("search_traces_duration_check", sql`${table.durationMs} >= 0`)
 ]);
 
+// Deliberately no FK to memories: ranked retrieval evidence survives source deletion.
+export const searchTraceResults = sqliteTable("search_trace_results", {
+  traceId: text("trace_id").notNull().references(() => searchTraces.id, { onDelete: "cascade" }),
+  memoryId: text("memory_id").notNull(),
+  rank: integer("rank").notNull(),
+  score: real("score").notNull(),
+  keywordRank: integer("keyword_rank"),
+  semanticRank: integer("semantic_rank"),
+  semanticDistance: real("semantic_distance"),
+  sourceRevision: integer("source_revision").notNull(),
+  sourceHash: text("source_hash").notNull()
+}, (table) => [
+  primaryKey({ columns: [table.traceId, table.rank] }),
+  uniqueIndex("search_trace_results_memory_idx").on(table.traceId, table.memoryId),
+  check("search_trace_results_rank_check", sql`${table.rank} >= 1`),
+  check("search_trace_results_source_revision_check", sql`${table.sourceRevision} >= 1`)
+]);
+
 export type LabSchema = typeof import("./schema");
 export type MemoryRow = typeof memories.$inferSelect;
 export type MemoryChunkRow = typeof memoryChunks.$inferSelect;
 export type ObservationRow = typeof observations.$inferSelect;
 export type ObservationSourceRow = typeof observationSources.$inferSelect;
 export type SearchTraceRow = typeof searchTraces.$inferSelect;
+export type SearchTraceResultRow = typeof searchTraceResults.$inferSelect;

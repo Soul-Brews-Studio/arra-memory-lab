@@ -1,0 +1,103 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-08-23T12:00:00+07:00",
+  "environment": "deployed Cloudflare Worker, remote D1, remote OAuth KV, Workers AI binding, and Claude.ai custom connector",
+  "containsCredentials": false,
+  "source": {
+    "commit": "d8294936deb21eb2d45648db80d70d025aab4184",
+    "version": "1.2.0",
+    "workerVersionId": "3b1cbd9e-a525-4ec2-9c5e-aebe13b7f93b"
+  },
+  "verification": {
+    "command": "npm run check",
+    "testsPassed": 33,
+    "testsFailed": 0,
+    "expectations": 117,
+    "typecheck": "passed",
+    "workerBuild": "passed",
+    "clientBuild": "passed",
+    "deployDryRun": "passed"
+  },
+  "migration": {
+    "name": "0003_trace_links_supersession.sql",
+    "status": "passed",
+    "commands": 7,
+    "authoritativeMemoriesBefore": 4,
+    "authoritativeMemoriesAfter": 4,
+    "foreignKeyCheck": "clean"
+  },
+  "connectorCatalog": {
+    "beforeReconnect": {
+      "status": "stale",
+      "toolCount": 7,
+      "newTraceToolsVisible": false
+    },
+    "afterDisconnectReconnect": {
+      "status": "fresh",
+      "toolCount": 9,
+      "readOnlyTraceTools": [
+        "trace_list",
+        "trace_get"
+      ],
+      "oauthFlow": "DCR plus authorization code with S256 PKCE"
+    },
+    "finding": "Claude.ai cached the previous tool catalog until the connector was disconnected and reconnected"
+  },
+  "mcpAcceptance": {
+    "requestedCalls": [
+      {
+        "tool": "trace_list",
+        "input": {
+          "limit": 2
+        },
+        "status": "succeeded"
+      },
+      {
+        "tool": "memory_stats",
+        "input": {},
+        "status": "succeeded"
+      }
+    ],
+    "writeOrDeleteToolsCalled": false,
+    "returnedSafeMetadataOnly": true,
+    "state": {
+      "memories": 4,
+      "indexedMemories": 0,
+      "chunks": 0,
+      "observations": 0,
+      "traces": 7,
+      "traceResults": 2
+    }
+  },
+  "traceAcceptance": {
+    "returnedTraceCount": 2,
+    "requestedMode": "keyword",
+    "effectiveMode": "keyword",
+    "fallbackUsed": false,
+    "resultSnapshotsPresent": true,
+    "rawQueryPresent": false,
+    "memoryContentPresent": false,
+    "credentialPresent": false
+  },
+  "screenshots": [
+    "screenshots/claude-stale-tool-catalog-v1.2.png",
+    "screenshots/claude-connected-tools-v1.2.png",
+    "screenshots/claude-trace-list-result-v1.2.png"
+  ],
+  "notProvenHere": [
+    "production supersession write or delete flow",
+    "induced provider outage fallback in production",
+    "concurrent remote D1 mutation race behavior",
+    "semantic retrieval with the final four-memory state",
+    "relevance, latency, capacity, or cost benchmarks"
+  ],
+  "strictPkceAcceptance": {
+    "dynamicClientRegistrationStatus": 201,
+    "missingChallengeStatus": 400,
+    "validS256AuthorizationStatus": 200,
+    "advertisedMethods": [
+      "S256"
+    ],
+    "productionCredentialMaterialCaptured": false
+  }
+}

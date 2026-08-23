@@ -32,7 +32,7 @@ The acceptance contract is:
 2. neither response includes `Mcp-Session-Id`;
 3. `tools/list` succeeds without a prior session header;
 4. legacy `GET` and `DELETE` session operations return `405`;
-5. a second process can call a tool using only the endpoint and bearer token;
+5. a second process can call a tool using only the endpoint and an OAuth-issued bearer token;
 6. corpus state survives because it is authoritative D1 state, not handler state.
 
 `src/server.test.ts` locks items 1–4 locally. Deployment acceptance records
@@ -40,10 +40,15 @@ items 1–6 without retaining the bearer token, memory text, IDs, or vectors.
 
 ## Security boundary
 
-The SDK does not authenticate requests. `src/server.ts` verifies the single
-lab bearer token before constructing the MCP handler. This remains a
-single-user research deployment: it has no OAuth, tenant isolation, rate
-limiting, or public-write safety controls.
+The Cloudflare OAuth provider authenticates `/mcp` before the request-local SDK
+handler runs. `src/server.ts` then unwraps the OAuth access token again to
+derive the tool catalog from its current scope. `memory:read` exposes four read
+tools; `memory:write` exposes four mutating tools; `lab_info` is available to
+every valid token. The static owner bearer is accepted only by private `/api/*`
+routes and the consent approval form, never as the direct MCP credential.
+
+This remains a single-user research deployment: it has no tenant isolation,
+rate limiting, or public-write safety controls.
 
 ## Deep session trace
 
@@ -70,11 +75,11 @@ and live deployment checks—not session prose—prove the current behavior.
 - **Runtime proof:** sanitized deployed URL, status/header matrix, tool count,
   and one non-destructive keyword recall.
 
-## 2026-08-23 deployment result
+## Historical 2026-08-23 pre-OAuth deployment result
 
 Live app: <https://arra-memory-lab.laris.workers.dev>
 
-The deployed Worker version `720d1eeb-8c87-48ac-a1b3-2afd3e5f8e3a` passed:
+The earlier Worker version `720d1eeb-8c87-48ac-a1b3-2afd3e5f8e3a` passed:
 
 - public `/api/info` and the React app returned `200`;
 - unauthorized `/mcp` returned `401` with a bearer challenge;
@@ -90,7 +95,7 @@ The deployed Worker version `720d1eeb-8c87-48ac-a1b3-2afd3e5f8e3a` passed:
   `2026-07-28` reported protocol era `modern`, listed seven tools, and called
   `memory_stats` successfully.
 
-Claude.ai was also tested through its real custom-connector UI with
+At that historical point, Claude.ai was also tested through its real custom-connector UI with
 `ego-browser`. Registration reached the endpoint but stopped at the
 authentication boundary: Claude.ai requested an OAuth sign-in/DCR service,
 while this lab deliberately exposes only a static bearer-token boundary. The
@@ -98,7 +103,11 @@ UI reported that it could not register with the connector's sign-in service;
 no connector or tool call was created. This is a **host acceptance failure**,
 not a transport failure. Supporting Claude.ai requires the deferred OAuth/DCR
 lane; putting the bearer token in a URL or making the write-capable MCP public
-would weaken the lab's security contract and was not done.
+would have weakened that release's security contract and was not done. The
+current implementation supersedes this limitation with OAuth 2.1, DCR, strict
+S256 PKCE, scoped tools, and a consent page that shows the redirect URI and
+requested scopes. Current release evidence is stored separately rather than
+rewriting this seven-tool artifact.
 
 The machine-readable, content-free result is in
 [`evidence/mcp-v2-stateless-2026-08-23.json`](./evidence/mcp-v2-stateless-2026-08-23.json).
