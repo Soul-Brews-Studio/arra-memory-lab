@@ -1,13 +1,13 @@
 {
   "name": "arra-memory-lab",
-  "version": "26.8.23-alpha.1316",
+  "version": "26.8.23-alpha.1432",
   "description": "A one-click Cloudflare memory-systems lab with D1, Drizzle, Workers AI, Elysia, React, and MCP",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "postbuild": "node scripts/scrub-build-secrets.mjs",
+    "postbuild": "node scripts/scrub-build-secrets.mjs && node scripts/verify-theme-build.mjs",
     "test": "bun test src/*.test.ts",
     "typecheck": "tsc --noEmit",
     "check": "npm run version:check && node --test scripts/calver.test.mjs && bun test src/*.test.ts && tsc --noEmit && npm run build",

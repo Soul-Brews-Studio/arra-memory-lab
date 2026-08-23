@@ -1,5 +1,6 @@
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
+import { applyTheme, readStoredTheme, THEMES, type ThemeName } from "./theme";
 import "./styles.css";
 
 type MemoryKind = "note" | "decision" | "lesson" | "context" | "retrospective" | "cheatsheet";
@@ -82,6 +83,7 @@ class ApiError extends Error {
 }
 
 function App() {
+  const [theme, setTheme] = useState<ThemeName>(() => readStoredTheme());
   const [token, setToken] = useState(() => sessionStorage.getItem(TOKEN_KEY) ?? "");
   const [draftToken, setDraftToken] = useState(token);
   const [info, setInfo] = useState<Json>({});
@@ -134,6 +136,7 @@ function App() {
     request("/api/info", {}, true).then(setInfo).catch(() => setInfo({}));
   }, [request]);
   useEffect(() => { void refresh(); }, [refresh]);
+  useEffect(() => { applyTheme(theme, document); }, [theme]);
 
   const act = async (name: string, action: () => Promise<void>) => {
     setBusy(name);
@@ -263,7 +266,21 @@ function App() {
 
   return <div className="shell">
     <header className="hero">
-      <nav><a className="brand" href="#top">ARRA / MEMORY LAB</a><a href="#architecture">Architecture</a><a href="#workbench">Workbench</a><a href="#evidence">Evidence</a></nav>
+      <nav>
+        <a className="brand" href="#top">ARRA / MEMORY LAB</a>
+        <a href="#architecture">Architecture</a><a href="#workbench">Workbench</a><a href="#evidence">Evidence</a>
+        <fieldset className="theme-picker">
+          <legend>Palette</legend>
+          <div className="theme-options">
+            {THEMES.map((option) => <label key={option.value} title={option.note}>
+              <input type="radio" name="theme" value={option.value} checked={theme === option.value} onChange={() => setTheme(option.value)}/>
+              <span className={`theme-swatch ${option.value}`} aria-hidden="true"/>
+              <span className="theme-name">{option.label}</span>
+              <span className="theme-check" aria-hidden="true">✓</span>
+            </label>)}
+          </div>
+        </fieldset>
+      </nav>
       <div className="hero-grid" id="top">
         <div><p className="eyebrow">Cloudflare systems lab · single user</p><h1>Memory you can<br/><em>interrogate.</em></h1><p className="lede">A small, inspectable implementation of authoritative memory, derived recall, evidence provenance, and reversible operations.</p></div>
         <form className="token-card" onSubmit={connect}>
