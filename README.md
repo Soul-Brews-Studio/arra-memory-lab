@@ -110,6 +110,13 @@ The lab exposes stateless Streamable HTTP MCP at `/mcp` with these tools:
 
 `lab_info`, `remember`, `recall`, `observe`, `forget`, `rebuild_index`, `memory_stats`.
 
+The implementation pins `@modelcontextprotocol/server@2.0.0` and uses the
+Cloudflare Agents `createMcpHandler` wrapper. “SDK v2” and “protocol version”
+are separate axes: the endpoint serves modern `2026-07-28` requests and keeps
+the 2025-era `initialize` flow as a stateless compatibility lane. Neither lane
+creates an `Mcp-Session-Id`; every request receives a fresh server instance.
+See [`docs/mcp-v2-stateless.md`](./docs/mcp-v2-stateless.md) for the proof matrix.
+
 ### MCP endpoint check with curl
 
 ```sh

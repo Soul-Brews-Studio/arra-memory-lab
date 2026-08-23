@@ -22,7 +22,7 @@ The lab demonstrates five reusable memory-system contracts:
 - ORM: Drizzle ORM
 - Storage: D1 (chosen instead of Turso because Deploy to Cloudflare can provision D1 automatically)
 - Embeddings: Workers AI `@cf/google/embeddinggemma-300m`, 768 dimensions
-- MCP: stateless Streamable HTTP at `/mcp`
+- MCP: `@modelcontextprotocol/server@2.0.0`, stateless Streamable HTTP at `/mcp`; modern `2026-07-28` plus stateless 2025-era compatibility, with no `Mcp-Session-Id`
 - Access: `Authorization: Bearer $LAB_ACCESS_TOKEN` for every `/api/*` route except `/api/info`, and for `/mcp`
 
 This is a single-user lab, not a multi-tenant production service. It must fail closed when `LAB_ACCESS_TOKEN` is absent.

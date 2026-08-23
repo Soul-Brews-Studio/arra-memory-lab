@@ -266,7 +266,11 @@ const info = {
   },
   mcp: {
     endpoint: "/mcp",
+    sdk: "@modelcontextprotocol/server@2.0.0",
+    wrapper: "agents@0.21.0 createMcpHandler",
     transport: "stateless Streamable HTTP",
+    sessionMode: "one fresh MCP server per request; no Mcp-Session-Id",
+    protocolEras: ["2026-07-28 modern", "2025 legacy compatibility"],
     tools: [
       "lab_info",
       "remember",
