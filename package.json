@@ -1,0 +1,55 @@
+{
+  "name": "arra-memory-lab",
+  "version": "1.0.0",
+  "description": "A one-click Cloudflare memory-systems lab with D1, Drizzle, Workers AI, Elysia, React, and MCP",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "postbuild": "node scripts/scrub-build-secrets.mjs",
+    "test": "bun test src/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "check": "bun test src/*.test.ts && tsc --noEmit && npm run build",
+    "db:migrate:local": "wrangler d1 migrations apply DB --local",
+    "db:migrate:remote": "wrangler d1 migrations apply DB --remote",
+    "db:generate": "drizzle-kit generate",
+    "deploy": "npm run db:migrate:remote && npm run build && wrangler deploy",
+    "types": "wrangler types env.d.ts --include-runtime false"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/server": "2.0.0",
+    "agents": "0.21.0",
+    "drizzle-orm": "1.0.0-rc.4",
+    "elysia": "1.4.29",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@cloudflare/vite-plugin": "1.53.1",
+    "@cloudflare/workers-types": "5.20260823.1",
+    "@types/bun": "1.4.0",
+    "@types/node": "26.0.1",
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "6.0.3",
+    "drizzle-kit": "1.0.0-rc.4",
+    "typescript": "6.0.3",
+    "vite": "8.2.2",
+    "wrangler": "4.125.0"
+  },
+  "cloudflare": {
+    "bindings": {
+      "LAB_ACCESS_TOKEN": {
+        "description": "Generate a long random bearer token, for example with `openssl rand -hex 32`. The browser keeps it only in session storage; MCP clients send it as an Authorization bearer token."
+      },
+      "DB": {
+        "description": "D1 stores authoritative memories, derived chunks, evidence-backed observations, and bounded metadata-only search traces."
+      },
+      "AI": {
+        "description": "Workers AI creates 768-dimensional EmbeddingGemma vectors for optional semantic and hybrid recall."
+      }
+    }
+  }
+}
