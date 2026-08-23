@@ -1,0 +1,66 @@
+{
+  "capturedAt": "2026-08-23T10:45:44+07:00",
+  "codeCommit": "c53571ead72aad06df72a645b0d07d93f50aaf24",
+  "deployment": {
+    "appUrl": "https://arra-memory-lab.laris.workers.dev",
+    "mcpUrl": "https://arra-memory-lab.laris.workers.dev/mcp",
+    "workerVersionId": "720d1eeb-8c87-48ac-a1b3-2afd3e5f8e3a"
+  },
+  "packageContract": {
+    "server": "@modelcontextprotocol/server@2.0.0",
+    "cloudflareWrapper": "agents@0.21.0",
+    "transport": "stateless Streamable HTTP"
+  },
+  "legacyRuntime": {
+    "protocolVersion": "2025-06-18",
+    "independentInitializeStatuses": [200, 200],
+    "sessionHeaders": [null, null],
+    "toolsListStatus": 200,
+    "toolCount": 7,
+    "getStatus": 405,
+    "deleteStatus": 405
+  },
+  "modernRuntime": {
+    "client": "@modelcontextprotocol/client@2.0.0",
+    "pinnedProtocolVersion": "2026-07-28",
+    "reportedEra": "modern",
+    "toolCount": 7,
+    "memoryStatsCallSucceeded": true
+  },
+  "retrievalRuntime": {
+    "keyword": {
+      "effectiveMode": "keyword",
+      "resultCount": 2,
+      "fallbackUsed": false
+    },
+    "temporaryWrite": {
+      "indexed": true,
+      "chunks": 1
+    },
+    "semantic": {
+      "effectiveMode": "semantic",
+      "resultCount": 1,
+      "fallbackUsed": false
+    },
+    "temporaryWriteRemoved": true
+  },
+  "finalDatabaseCounts": {
+    "memories": 4,
+    "chunks": 0,
+    "observations": 0,
+    "traces": 3
+  },
+  "claudeAiHost": {
+    "testedWith": "ego-browser logged-in custom connector UI",
+    "connectorRegistration": "failed_closed",
+    "reason": "Claude.ai requires OAuth/DCR for this challenged endpoint; the lab supports only a static bearer token",
+    "toolCallMade": false,
+    "connectorPersisted": false
+  },
+  "privacy": {
+    "containsBearerToken": false,
+    "containsMemoryContent": false,
+    "containsMemoryIds": false,
+    "containsVectors": false
+  }
+}
