@@ -4,10 +4,30 @@ import {
   optionalText,
   projectText,
   provenanceTags,
+  queryTerms,
   required
 } from "./domain-utils";
 
 describe("domain utility contracts", () => {
+  test("keeps a Thai word whole instead of splitting on its combining marks", () => {
+    // Thai vowels/tone marks are combining code points. Without \p{M} in the
+    // character class these act as separators: ["บ","นท","ก"].
+    expect(queryTerms("บันทึก")).toEqual(["บันทึก"]);
+    expect(queryTerms("ที่คั่นหน้า")).toEqual(["ที่คั่นหน้า"]);
+  });
+
+  test("a shredded Thai query no longer matches unrelated text", () => {
+    // The old split left single-character fragments that substring-match any
+    // Thai text, scoring irrelevant memories as hits.
+    const unrelated = "กรุงเทพมหานคร เป็นเมืองหลวง";
+    expect(queryTerms("บันทึก").some((term) => unrelated.includes(term))).toBe(false);
+  });
+
+  test("still splits on whitespace and punctuation", () => {
+    expect(queryTerms("Oracle, memory")).toEqual(["oracle", "memory"]);
+    expect(queryTerms("ความจำ oracle")).toEqual(["ความจำ", "oracle"]);
+  });
+
   test("canonicalizes repository scope once", () => {
     expect(projectText("https://GitHub.com/Soul-Brews-Studio/Repo///"))
       .toBe("github.com/soul-brews-studio/repo");

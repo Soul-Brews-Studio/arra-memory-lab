@@ -5,6 +5,7 @@ import {
   limitFor,
   MAX_SEMANTIC_CHUNKS,
   projectText,
+  queryTerms,
   SemanticScanLimitError,
   TRACE_RETENTION
 } from "../domain-utils";
@@ -24,7 +25,7 @@ export async function queryKeywordRanks(
     projectScope ? eq(schema.memories.project, projectScope) : undefined
   ))
     .orderBy(desc(schema.memories.updatedAt)).limit(500);
-  const terms = query.toLocaleLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+  const terms = queryTerms(query);
   return corpus.map((memory) => {
     const title = memory.title.toLocaleLowerCase();
     const body = `${memory.content} ${memory.tags.join(" ")} ${memory.project ?? ""} ${memory.sourcePath ?? ""} ${memory.createdBy}`.toLocaleLowerCase();
