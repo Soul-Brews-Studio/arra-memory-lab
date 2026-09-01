@@ -84,6 +84,21 @@ export function provenanceTags(tags: string[] | undefined, oracleName: string | 
   return [oracleTag, ...normalized].slice(0, 10);
 }
 
+/**
+ * Split a search query into keyword terms.
+ *
+ * The character class must include `\p{M}` (combining marks). Thai vowels and
+ * tone marks are separate combining code points, so a class of only
+ * `\p{L}\p{N}` treats them as separators and shreds a word into fragments:
+ * "บันทึก" becomes ["บ","นท","ก"]. That breaks keyword search in both
+ * directions — the intended memory is missed, and the leftover single-character
+ * fragments substring-match unrelated Thai text, so an irrelevant memory scores
+ * a hit. Latin text is unaffected, which is why this passes unnoticed.
+ */
+export function queryTerms(query: string): string[] {
+  return query.toLocaleLowerCase().split(/[^\p{L}\p{N}\p{M}]+/u).filter(Boolean);
+}
+
 export function limitFor(limit: number | undefined): number {
   return Math.max(1, Math.min(50, Math.trunc(limit ?? 10)));
 }
